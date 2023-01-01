@@ -1,16 +1,22 @@
 from __future__ import annotations
+from io import BytesIO, TextIOWrapper
 from typing import Callable
 import hashlib
 import re
 
-from paramiko import SSHClient, AutoAddPolicy
+from paramiko import PasswordRequiredException, RSAKey, SSHClient, AutoAddPolicy
 from paramiko.channel import ChannelStdinFile, ChannelFile, ChannelStderrFile
 
 
 __all__ = [
+    'SSHPasswordRequiredException',
     'SSHExecuteResult',
     'SSH'
 ]
+
+
+class SSHPasswordRequiredException(Exception):
+    pass
 
 
 class SSHExecuteResult:
@@ -103,18 +109,92 @@ class SSH:
 
     last: SSH
 
-    def __init__(self, host: str, username: str, password: str) -> None:
+    def __init__(
+        self, 
+        host: str, 
+        username: str, 
+        password: str | None = None, 
+        pem: str | None = None
+    ) -> None:
         self.client: SSHClient
-        self.__connect_client(host, username, password)
+        self._connect_client(host, username, password, pem)
         SSH.last = self
 
     
-    def __connect_client(self, host: str, username: str, password: str):
+    def _connect_client(
+        self, 
+        host: str, 
+        username: str, 
+        password: str | None, 
+        pem: str | None
+    ) -> None:
+        if pem is not None:
+            self.__connect_client_by_pen(
+                host, username, pem, password)
+            return None
+
+        self.__connect_client_by_password(
+            host, username, password)
+    
+
+    def __connect_client_by_pen(
+        self, 
+        host: str, 
+        username: str, 
+        pem: str,
+        password: str | None
+    ):
+        _pem = None
+
+        try:
+            _pem = RSAKey.from_private_key_file(pem, password)
+
+        except PasswordRequiredException as e:
+            raise SSHPasswordRequiredException(
+                "PEM file is encrypted and requires a valid password")
+
+        except Exception:
+            try:
+                _pem = RSAKey.from_private_key(
+                    TextIOWrapper(BytesIO(pem.strip().encode())), 
+                    password
+                )
+
+            except PasswordRequiredException as e:
+                raise SSHPasswordRequiredException(
+                    "PEM is encrypted and requires a valid password")
+
+            except Exception as e:
+                raise e
+
         try:
             client = SSHClient()
             client.set_missing_host_key_policy(AutoAddPolicy())
+
             client.connect(
-                hostname=host, username=username, password=password)
+                hostname=host, 
+                username=username, 
+                pkey=_pem)
+
+            self.client = client
+        except Exception as e:
+            raise e
+    
+
+    def __connect_client_by_password(
+        self, 
+        host: str, 
+        username: str, 
+        password: str | None
+    ):
+        client = SSHClient()
+        client.set_missing_host_key_policy(AutoAddPolicy())
+
+        try:
+            client.connect(
+                hostname=host, 
+                username=username, 
+                password=password)
 
             self.client = client
         except Exception as e:
@@ -247,9 +327,14 @@ class SSH:
 
 
     @staticmethod
-    def is_valid_connection(host: str, username: str, password: str):
+    def is_valid_connection(
+        host: str, 
+        username: str, 
+        password: str | None = None, 
+        pem: str | None = None
+    ):
         try:
-            SSH(host, username, password).close()
+            SSH(host, username, password, pem).close()
             return True
-        except:
+        except Exception as e:
             return False

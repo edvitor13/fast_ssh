@@ -80,3 +80,29 @@ with SSH(host, username, password) as ssh:
         
     except Exception as e:
         print(f"Falha ao baixar arquivo: {e}")
+
+
+# 3. Criando conexão via PEM (Privacy Enhanced Mail)
+
+# 3.1. Validando conexão em arquivo PEM sem Senha
+if not SSH.is_valid_connection(host, username, pem="/home/caminho/key.pem"):
+    sys.exit("Conexão inválida")
+
+# 3.2. Validando conexão em arquivo PEM com Senha
+if not SSH.is_valid_connection(
+    host, username, password, pem="/home/caminho/key.pem"
+):
+    sys.exit("Conexão inválida")
+
+# 3.3. Também é possível utilizando a string de forma direta
+pem = """
+---BEGIN RSA PRIVATE KEY-----
+MIIJKQIBAAKCAgEA5dWg1bJN5Oy9PQoC0qWxI8GGO/wZ/5b4O1t4a4tA4eBP9yJY
+...
+...
+a5fWZS8lZw14xZzKv4tD4W4Ia+SoGX9YJv5M5IW8SVxt61MKnA1jvGd5Rc8RVJ==
+-----END OPENSSH PRIVATE KEY-----
+"""
+
+if not SSH.is_valid_connection(host, username, password, pem=pem):
+    sys.exit("Conexão inválida")
